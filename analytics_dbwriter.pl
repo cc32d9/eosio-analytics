@@ -23,10 +23,12 @@ my $dsn = 'DBI:MariaDB:database=eos_analytics;host=localhost';
 my $db_user = 'eos_analytics';
 my $db_password = 'guugh3Ei';
 my $commit_every = 100;
-
+my $endblock = 2^32 - 1;
+    
 my $ok = GetOptions
     ('port=i'    => \$port,
      'ack=i'     => \$commit_every,
+     'endblock=i'  => \$endblock,
      'dsn=s'     => \$dsn,
      'dbuser=s'  => \$db_user,
      'dbpw=s'    => \$db_password,
@@ -36,12 +38,13 @@ my $ok = GetOptions
 if( not $ok or scalar(@ARGV) > 0 )
 {
     print STDERR "Usage: $0 [options...]\n",
-    "Options:\n",
-    "  --port=N           \[$port\] TCP port to listen to websocket connection\n",
-    "  --ack=N            \[$commit_every\] Send acknowledgements every N blocks\n",
-    "  --dsn=DSN          \[$dsn\]\n",
-    "  --dbuser=USER      \[$db_user\]\n",
-    "  --dbpw=PASSWORD    \[$db_password\]\n";
+        "Options:\n",
+        "  --port=N           \[$port\] TCP port to listen to websocket connection\n",
+        "  --ack=N            \[$commit_every\] Send acknowledgements every N blocks\n",
+        "  --endblock=N       \[$endblock\] Stop before given block\n",
+        "  --dsn=DSN          \[$dsn\]\n",
+        "  --dbuser=USER      \[$db_user\]\n",
+        "  --dbpw=PASSWORD    \[$db_password\]\n";
     exit 1;
 }
 
@@ -78,16 +81,16 @@ my $sth_add_delegatebw = $dbh->prepare
 
 
 my $sth_wipe_transfers = $dbh->prepare
-    ('DELETE FROM EOSIO_TRANSFERS WHERE block_num >= ?');
+    ('DELETE FROM EOSIO_TRANSFERS WHERE block_num >= ? AND block_num < ?');
 
 my $sth_wipe_votes = $dbh->prepare
-    ('DELETE FROM EOSIO_VOTES WHERE block_num >= ?');
+    ('DELETE FROM EOSIO_VOTES WHERE block_num >= ? AND block_num < ?');
 
 my $sth_wipe_proxy_votes = $dbh->prepare
-    ('DELETE FROM EOSIO_PROXY_VOTES WHERE block_num >= ?');
+    ('DELETE FROM EOSIO_PROXY_VOTES WHERE block_num >= ? AND block_num < ?');
 
 my $sth_wipe_delegatebw = $dbh->prepare
-    ('DELETE FROM EOSIO_DELEGATEBW WHERE block_num >= ?');
+    ('DELETE FROM EOSIO_DELEGATEBW WHERE block_num >= ? AND block_num < ?');
 
 
 my $committed_block = 0;
@@ -116,6 +119,12 @@ Net::WebSocket::Server->new(
                     $conn->send_binary(sprintf("%d", $ack));
                     print STDERR "ack $ack\n";
                 }
+
+                if( $ack >= $endblock )
+                {
+                    print STDERR "Reached end block\n";
+                    exit(0);
+                }
             },
             'disconnect' => sub {
                 my ($conn, $code) = @_;
@@ -139,10 +148,10 @@ sub process_data
     {
         my $block_num = $data->{'block_num'};
         print STDERR "fork at $block_num\n";
-        $sth_wipe_transfers->execute($block_num);
-        $sth_wipe_votes->execute($block_num);
-        $sth_wipe_proxy_votes->execute($block_num);
-        $sth_wipe_delegatebw->execute($block_num);
+        $sth_wipe_transfers->execute($block_num, $endblock);
+        $sth_wipe_votes->execute($block_num, $endblock);
+        $sth_wipe_proxy_votes->execute($block_num, $endblock);
+        $sth_wipe_delegatebw->execute($block_num, $endblock);
         $dbh->commit();
         $committed_block = $block_num;
         $uncommitted_block = 0;
@@ -180,7 +189,8 @@ sub process_data
     elsif( $msgtype == 1010 ) # CHRONICLE_MSGTYPE_BLOCK_COMPLETED
     {
         $uncommitted_block = $data->{'block_num'};
-        if( $uncommitted_block - $committed_block >= $commit_every )
+        if( $uncommitted_block - $committed_block >= $commit_every or
+            $uncommitted_block >= $endblock )
         {
             $dbh->commit();
             $committed_block = $uncommitted_block;

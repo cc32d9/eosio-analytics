@@ -23,7 +23,7 @@ my $dsn = 'DBI:MariaDB:database=eos_analytics;host=localhost';
 my $db_user = 'eos_analytics';
 my $db_password = 'guugh3Ei';
 my $commit_every = 100;
-my $endblock = 2^32 - 1;
+my $endblock = 2**32 - 1;
     
 my $ok = GetOptions
     ('port=i'    => \$port,

@@ -153,7 +153,7 @@ sub process_data
         $sth_wipe_proxy_votes->execute($block_num, $endblock);
         $sth_wipe_delegatebw->execute($block_num, $endblock);
         $dbh->commit();
-        $committed_block = $block_num;
+        $committed_block = $block_num-1;
         $uncommitted_block = 0;
         return $block_num;
     }
@@ -162,16 +162,14 @@ sub process_data
         my $trace = $data->{'trace'};
         if( $trace->{'status'} eq 'executed' )
         {
-            my $block_num = $data->{'block_num'};
-            my $trx_id = $trace->{'transaction_id'};
             my $block_time = $data->{'block_timestamp'};
             $block_time =~ s/T/ /;
             
-            my $tx = {'block_num' => $block_num,
+            my $tx = {'block_num' => $data->{'block_num'},
                       'block_time' => $block_time,
-                      'trx_id' => $trx_id};
+                      'trx_id' => $trace->{'id'}};
 
-            foreach my $atrace (@{$trace->{'traces'}})
+            foreach my $atrace (@{$trace->{'action_traces'}})
             {
                 process_atrace($tx, $atrace);
             }
@@ -207,120 +205,116 @@ sub process_atrace
     my $tx = shift;
     my $atrace = shift;
 
+    my $act = $atrace->{'act'};
+    my $contract = $act->{'account'};
     my $receipt = $atrace->{'receipt'};
-    my $seq = $receipt->{'global_sequence'};
     
-    if( $atrace->{'receipt'}{'receiver'} eq $atrace->{'account'} )
+    if( $receipt->{'receiver'} eq $contract )
     {
-        my $aname = $atrace->{'name'};
-        my $data = $atrace->{'data'};
-        if( ref($data) eq 'HASH' )
+        my $seq = $receipt->{'global_sequence'};
+        my $aname = $act->{'name'};
+
+        my $data = $act->{'data'};
+        return unless ( ref($data) eq 'HASH' );
+        
+        if( ($aname eq 'transfer' or $aname eq 'issue') and 
+            defined($data->{'quantity'}) and defined($data->{'to'}) )
         {
-            if( ($aname eq 'transfer' or $aname eq 'issue') and 
-                defined($data->{'quantity'}) and defined($data->{'to'}) )
+            my ($amount, $currency) = split(/\s+/, $data->{'quantity'});
+            if( defined($amount) and defined($currency) and
+                $amount =~ /^[0-9.]+$/ and $currency =~ /^[A-Z]{1,7}$/ )
             {
-                my ($amount, $currency) = split(/\s+/, $data->{'quantity'});
-                if( defined($amount) and defined($currency) and
-                    $amount =~ /^[0-9.]+$/ and $currency =~ /^[A-Z]{1,7}$/ )
-                {
-                    $sth_add_transfer->execute
-                        (
-                         $seq,
-                         $tx->{'block_num'},
-                         $tx->{'block_time'},
-                         $tx->{'trx_id'},
-                         $atrace->{'account'},
-                         $currency,
-                         $amount,
-                         $data->{'from'},
-                         $data->{'to'},
-                         $data->{'memo'}
-                        );
-                }
+                $sth_add_transfer->execute
+                    (
+                     $seq,
+                     $tx->{'block_num'},
+                     $tx->{'block_time'},
+                     $tx->{'trx_id'},
+                     $contract,
+                     $currency,
+                     $amount,
+                     $data->{'from'},
+                     $data->{'to'},
+                     $data->{'memo'}
+                    );
             }
-            elsif( $atrace->{'account'} eq 'eosio' )
+        }
+        elsif( $contract eq 'eosio' )
+        {
+            if( $aname eq 'delegatebw' )
             {
-                if( $aname eq 'delegatebw' )
+                my ($cpu, $curr1) = split(/\s+/, $data->{'stake_cpu_quantity'});
+                my ($net, $curr2) = split(/\s+/, $data->{'stake_net_quantity'});
+                
+                $sth_add_delegatebw->execute
+                    (
+                     $seq,
+                     $tx->{'block_num'},
+                     $tx->{'block_time'},
+                     $tx->{'trx_id'},
+                     $data->{'from'},
+                     $data->{'receiver'},
+                     1,
+                     $data->{'transfer'} ? 1:0,
+                     $cpu,
+                     $net
+                    );
+            }
+            elsif( $aname eq 'undelegatebw' )
+            {
+                my ($cpu, $curr1) = split(/\s+/, $data->{'unstake_cpu_quantity'});
+                my ($net, $curr2) = split(/\s+/, $data->{'unstake_net_quantity'});
+                
+                $sth_add_delegatebw->execute
+                    (
+                     $seq,
+                     $tx->{'block_num'},
+                     $tx->{'block_time'},
+                     $tx->{'trx_id'},
+                     $data->{'from'},
+                     $data->{'receiver'},
+                     0,
+                     0,
+                     $cpu,
+                     $net
+                    );
+            }
+            elsif( $aname eq 'voteproducer' )
+            {
+                if( $data->{'proxy'} eq '' )
                 {
-                    my ($cpu, $curr1) = split(/\s+/, $data->{'stake_cpu_quantity'});
-                    my ($net, $curr2) = split(/\s+/, $data->{'stake_net_quantity'});
-                    
-                    $sth_add_delegatebw->execute
-                        (
-                         $seq,
-                         $tx->{'block_num'},
-                         $tx->{'block_time'},
-                         $tx->{'trx_id'},
-                         $data->{'from'},
-                         $data->{'receiver'},
-                         1,
-                         $data->{'transfer'} ? 1:0,
-                         $cpu,
-                         $net
-                        );
-                }
-                elsif( $aname eq 'undelegatebw' )
-                {
-                    my ($cpu, $curr1) = split(/\s+/, $data->{'unstake_cpu_quantity'});
-                    my ($net, $curr2) = split(/\s+/, $data->{'unstake_net_quantity'});
-                    
-                    $sth_add_delegatebw->execute
-                        (
-                         $seq,
-                         $tx->{'block_num'},
-                         $tx->{'block_time'},
-                         $tx->{'trx_id'},
-                         $data->{'from'},
-                         $data->{'receiver'},
-                         0,
-                         0,
-                         $cpu,
-                         $net
-                        );
-                }
-                elsif( $aname eq 'voteproducer' )
-                {
-                    if( $data->{'proxy'} eq '' )
+                    foreach my $bp (@{$data->{'producers'}})
                     {
-                        foreach my $bp (@{$data->{'producers'}})
-                        {
-                            $sth_add_vote->execute
-                                (
-                                 $seq,
-                                 $tx->{'block_num'},
-                                 $tx->{'block_time'},
-                                 $tx->{'trx_id'},
-                                 $data->{'voter'},
-                                 $bp
-                                );
-                        }
-                    }
-                    else
-                    {
-                        $sth_add_proxy_vote->execute
+                        $sth_add_vote->execute
                             (
                              $seq,
                              $tx->{'block_num'},
                              $tx->{'block_time'},
                              $tx->{'trx_id'},
                              $data->{'voter'},
-                             $data->{'proxy'}
+                             $bp
                             );
                     }
                 }
+                else
+                {
+                    $sth_add_proxy_vote->execute
+                        (
+                         $seq,
+                         $tx->{'block_num'},
+                         $tx->{'block_time'},
+                         $tx->{'trx_id'},
+                         $data->{'voter'},
+                         $data->{'proxy'}
+                        );
+                }
             }
         }
-    }
-            
-    if( defined($atrace->{'inline_traces'}) )
-    {
-        foreach my $trace (@{$atrace->{'inline_traces'}})
-        {
-            process_atrace($tx, $trace);
-        }
-    }
+    }    
 }
-    
+
+
+
     
         
 

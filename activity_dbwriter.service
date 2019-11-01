@@ -1,0 +1,16 @@
+[Unit]
+Description=activity DB Writer
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/perl /opt/telos_acc_activity/activity_dbwriter.pl
+TimeoutSec=45s
+Restart=always
+User=root
+Group=daemon
+KillMode=control-group
+
+
+[Install]
+WantedBy=multi-user.target
+

@@ -67,8 +67,8 @@ my $sth_del_currbal = $dbh->prepare
 
 my $sth_add_account = $dbh->prepare
     ('INSERT IGNORE INTO ACCOUNTS ' .
-     '(account_name) ' .
-     'VALUES(?)');
+     '(account_name, genesis) ' .
+     'VALUES(?,?)');
 
 my $sth_inc_authcnt = $dbh->prepare
     ('INSERT INTO AUTH_COUNTER ' .
@@ -141,9 +141,6 @@ sub process_data
         my $trace = $data->{'trace'};
         if( $trace->{'status'} eq 'executed' )
         {
-            my $block_time = $data->{'block_timestamp'};
-            $block_time =~ s/T/ /;
-            
             foreach my $atrace (@{$trace->{'action_traces'}})
             {
                 my $act = $atrace->{'act'};
@@ -193,7 +190,8 @@ sub process_data
             {
                 if( $kvo->{'table'} eq 'userres' )
                 {
-                    $sth_add_account->execute($kvo->{'value'}{'owner'});
+                    $sth_add_account->execute($kvo->{'value'}{'owner'},
+                                              ($data->{'block_num'} < 1000000 ? 1:0));
                 }
             }
         }

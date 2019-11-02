@@ -134,7 +134,7 @@ sub process_data
         print STDERR "fork at $block_num\n";
         $committed_block = $block_num-1;
         $uncommitted_block = 0;
-        return $block_num;
+        return $committed_block;
     }
     elsif( $msgtype == 1003 ) # CHRONICLE_MSGTYPE_TX_TRACE
     {
@@ -179,7 +179,7 @@ sub process_data
                         if( $data->{'added'} eq 'true' )
                         {
                             $sth_add_currbal->execute
-                                ($kvo->{'scope'}, $kvo->{'code'}, $currency, $amount);
+                                ($kvo->{'scope'}, $kvo->{'code'}, $currency, $amount, $amount);
                         }
                         else
                         {
@@ -187,6 +187,13 @@ sub process_data
                                 ($kvo->{'scope'}, $kvo->{'code'}, $currency);
                         }
                     }
+                }
+            }
+            elsif( $kvo->{'code'} eq 'eosio' )
+            {
+                if( $kvo->{'table'} eq 'userres' )
+                {
+                    $sth_add_account->execute($kvo->{'value'}{'owner'});
                 }
             }
         }

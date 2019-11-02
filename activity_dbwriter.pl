@@ -191,7 +191,7 @@ sub process_data
                 if( $kvo->{'table'} eq 'userres' )
                 {
                     $sth_add_account->execute($kvo->{'value'}{'owner'},
-                                              ($data->{'block_num'} < 1000000 ? 1:0));
+                                              ($data->{'block_num'} <= 2516 ? 1:0));
                 }
             }
         }

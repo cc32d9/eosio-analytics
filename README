@@ -1,0 +1,3 @@
+mysql activity --batch --execute 'select ACCOUNTS.account_name from ACCOUNTS left outer join AUTH_COUNTER on AUTH_COUNTER.account_name=ACCOUNTS.account_name where AUTH_COUNTER.account_name is null and genesis=1' >GENESISINACTIVE_20191218
+
+

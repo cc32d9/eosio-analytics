@@ -3,6 +3,10 @@ CREATE DATABASE activity;
 CREATE USER 'activity'@'localhost' IDENTIFIED BY 'sdcrqewirxs';
 GRANT ALL ON activity.* TO 'activity'@'localhost';
 
+CREATE USER 'activityro'@'%' IDENTIFIED BY 'activityro';
+GRANT SELECT ON activity.* TO 'activityro'@'%';
+
+
 use activity;
 
 CREATE TABLE CURRENCY_BAL

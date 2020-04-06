@@ -155,7 +155,7 @@ sub process_data
         $dbh->commit();
         $committed_block = $block_num-1;
         $uncommitted_block = 0;
-        return $block_num;
+        return $committed_block;
     }
     elsif( $msgtype == 1003 ) # CHRONICLE_MSGTYPE_TX_TRACE
     {
